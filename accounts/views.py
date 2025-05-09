@@ -69,17 +69,7 @@ class UserHealthView(viewsets.ModelViewSet):
         if instance.user != request.user:
             return Response({"detail": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
         return super().partial_update(request, *args, **kwargs)
-    @action(detail=False, methods=["get", "patch"], url_path="me")
-    def me(self, request):
-        user_health = UserHealth.objects.get(user=request.user)
-        if request.method == "GET":
-            serializer = self.get_serializer(user_health)
-            return Response(serializer.data)
-        elif request.method == "PATCH":
-            serializer = self.get_serializer(user_health, data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data)
+    
     
 
     
