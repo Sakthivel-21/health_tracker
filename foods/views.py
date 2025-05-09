@@ -3,7 +3,7 @@ from .models import Category, Food, FoodLog, Routine
 from .serializers import *
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,AllowAny
 
 import requests
 
@@ -17,12 +17,12 @@ from rest_framework import status, filters
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
 class FoodViewSet(viewsets.ModelViewSet):
     queryset = Food.objects.all()
     serializer_class = FoodSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name'] 
     @action(detail=False, methods=['post'], serializer_class=FoodCalculationSerializer)
@@ -56,15 +56,18 @@ class FoodViewSet(viewsets.ModelViewSet):
 class FoodLogViewSet(viewsets.ModelViewSet):
     queryset = FoodLog.objects.all()
     serializer_class = FoodLogSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
     filter_backends = [filters.SearchFilter]
     search_fields = ['food__name']  
 
     def get_queryset(self):
         return self.queryset.filter(user=self.request.user)
 
+    
+
+   
     @action(detail=False, methods=['get'])
-    def daily_summary(self, request):
+    def total_daily_summary(self, request):
         date = request.query_params.get('date')
         if not date:
             date = datetime.today().date()
@@ -77,6 +80,69 @@ class FoodLogViewSet(viewsets.ModelViewSet):
             total_fats=Sum(F('quantity') * F('food__fats')),
         )
         return Response({key: value or 0 for key, value in summary.items()})
+
+    @action(detail=False, methods=['get'])
+    def today_summary(self, request):
+        """
+        Get today's meal-wise summary including empty meals.
+        """
+        today = datetime.today().date()
+        logs = FoodLog.objects.filter(user=request.user, date=today)
+
+        # Group logs by meal_type
+        grouped_meals = defaultdict(list)
+        for log in logs:
+            grouped_meals[log.meal_type].append({
+                "food_id": log.food.id,
+                "quantity": log.quantity,
+            })
+
+        # Meal summary
+        meals = []
+        total_summary = {
+            "total_calories": 0,
+            "total_protein": 0,
+            "total_carbs": 0,
+            "total_fats": 0
+        }
+
+        meal_types = ["breakfast", "lunch", "dinner", "snacks"]
+
+        for meal in meal_types:
+            meal_logs = logs.filter(meal_type=meal)
+            meal_summary = meal_logs.aggregate(
+                calories=Sum(F('quantity') * F('food__calories')),
+                protein=Sum(F('quantity') * F('food__protein')),
+                carbs=Sum(F('quantity') * F('food__carbs')),
+                fats=Sum(F('quantity') * F('food__fats')),
+            )
+
+            total_summary["total_calories"] += meal_summary["calories"] or 0
+            total_summary["total_protein"] += meal_summary["protein"] or 0
+            total_summary["total_carbs"] += meal_summary["carbs"] or 0
+            total_summary["total_fats"] += meal_summary["fats"] or 0
+
+            meals.append({
+                "meal_type": meal,
+                "items": grouped_meals.get(meal, []),
+                "meal_summary": {
+                    "calories": round(meal_summary["calories"] or 0, 2),
+                    "protein": round(meal_summary["protein"] or 0, 2),
+                    "carbs": round(meal_summary["carbs"] or 0, 2),
+                    "fats": round(meal_summary["fats"] or 0, 2),
+                }
+            })
+
+        return Response({
+            "meals": meals,
+            "today_summary": {
+                "total_calories": round(total_summary["total_calories"], 2),
+                "total_protein": round(total_summary["total_protein"], 2),
+                "total_carbs": round(total_summary["total_carbs"], 2),
+                "total_fats": round(total_summary["total_fats"], 2),
+            }
+        })
+
 
     @action(detail=False, methods=['get'])
     def history(self, request):

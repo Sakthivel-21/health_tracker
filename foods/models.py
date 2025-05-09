@@ -10,7 +10,7 @@ class Category(models.Model):
 
 class Food(models.Model):
     name = models.CharField(max_length=200)
-    image = models.ImageField(upload_to='food_images/', null=True, blank=True)
+    
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='foods')
     calories = models.FloatField()
     protein = models.FloatField(null=True, blank=True)
